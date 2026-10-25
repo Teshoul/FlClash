@@ -3,6 +3,8 @@ import 'dart:ui' show Size;
 
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/ui/ui.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/widgets.dart' show BuildContext;
 
 import 'constant.dart';
@@ -32,8 +34,16 @@ bool showsWindowHeader({
   return !(isMacOS && (version <= 10 || !isMobileView));
 }
 
-ViewMode getViewMode(double viewWidth) {
+/// A phone held sideways keeps the mobile layout: its short side, not its
+/// width, tells a phone from a tablet.
+ViewMode getViewMode(double viewWidth, [double? viewHeight]) {
   if (viewWidth <= maxMobileWidth) return ViewMode.mobile;
+  if (viewHeight != null &&
+      viewHeight <= maxMobileWidth &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS)) {
+    return ViewMode.mobile;
+  }
   if (viewWidth <= maxLaptopWidth) return ViewMode.laptop;
   return ViewMode.desktop;
 }
