@@ -18,6 +18,10 @@ import 'package:material_ui/material_ui.dart';
 import 'liquid_glass.dart';
 
 const double _barHeight = 62;
+const double _railItemWidth = 60;
+const double _railItemHeight = 56;
+const double _railMargin = 12;
+const double _railIconSize = 26;
 const double _barPadding = 4;
 const double _edgeMargin = 21;
 const double _shadowRoom = 8;
@@ -2108,5 +2112,262 @@ class _RenderLensTint extends RenderProxyBox {
       ..saveLayer(lensBounds.shift(offset), Paint()..colorFilter = filter);
     _paintMoved(context, offset, motion, _insideMotion);
     canvas.restore();
+  }
+}
+
+
+/// A vertical glass pill of destinations for a phone held sideways, sitting at
+/// the end edge. It stands on the same glass, lens and springs as the bottom
+/// [FloatingNavigationBar], and a finger slides the lens up and down it.
+class VerticalNavigationDock extends StatefulWidget {
+  const VerticalNavigationDock({
+    super.key,
+    required this.destinations,
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  final List<NavigationDockDestination> destinations;
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  static double _endMarginOf(BuildContext context) =>
+      math.max(_railMargin, MediaQuery.paddingOf(context).right);
+
+  /// The room content leaves at the end edge, the dock's whole width.
+  static double insetOf(BuildContext context) =>
+      _railItemWidth + _barPadding * 2 + _endMarginOf(context) + _railMargin;
+
+  @override
+  State<VerticalNavigationDock> createState() => _VerticalNavigationDockState();
+}
+
+class _VerticalNavigationDockState extends State<VerticalNavigationDock>
+    with TickerProviderStateMixin {
+  late final _Spring _lens = _Spring(this, _selected.toDouble());
+  late final _Spring _lift = _Spring(this, 0);
+  late final Listenable _motion = Listenable.merge([_lens, _lift]);
+  final ValueNotifier<LiquidGlassGlow> _glow = ValueNotifier(
+    LiquidGlassGlow.none,
+  );
+  double _itemHeight = _railItemHeight;
+  int? _pointer;
+  int? _pressed;
+
+  int get _last => math.max(0, widget.destinations.length - 1);
+
+  int get _selected => widget.selectedIndex.clamp(0, _last);
+
+  @override
+  void didUpdateWidget(covariant VerticalNavigationDock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_pressed == null && _lens.target != _selected.toDouble()) {
+      _lens.springTo(_selected.toDouble(), _travelSpring);
+    }
+  }
+
+  @override
+  void dispose() {
+    _lens.dispose();
+    _lift.dispose();
+    _glow.dispose();
+    super.dispose();
+  }
+
+  double _positionAt(double dy) {
+    final position = (dy - _barPadding) / _itemHeight - 0.5;
+    return position.clamp(0.0, _last.toDouble());
+  }
+
+  int _indexAt(double position) => position.round().clamp(0, _last);
+
+  void _handlePointerDown(PointerDownEvent event) {
+    if (_pointer != null ||
+        event.buttons & kPrimaryButton == 0 ||
+        widget.destinations.isEmpty) {
+      return;
+    }
+    _pointer = event.pointer;
+    final index = _indexAt(_positionAt(event.localPosition.dy));
+    _pressed = index;
+    _lift.springTo(1, _liftSpring);
+    _lens.springTo(index.toDouble(), _travelSpring);
+  }
+
+  void _handlePointerMove(PointerMoveEvent event) {
+    if (event.pointer != _pointer) {
+      return;
+    }
+    final position = _positionAt(event.localPosition.dy);
+    _lens.springTo(position, _followSpring);
+    final index = _indexAt(position);
+    if (index != _pressed) {
+      HapticFeedback.selectionClick();
+      _pressed = index;
+    }
+  }
+
+  void _handlePointerEnd(PointerEvent event) {
+    if (event.pointer != _pointer) {
+      return;
+    }
+    final index = _pressed;
+    final commit = event is PointerUpEvent && index != null;
+    _pointer = null;
+    _pressed = null;
+    _lens.springTo(
+      (commit ? index : _selected).toDouble(),
+      _travelSpring,
+    );
+    _lift.springTo(0, _liftSpring);
+    if (commit && index != widget.selectedIndex) {
+      widget.onSelected(index);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = widget.destinations.length;
+    if (count == 0) {
+      return const SizedBox.shrink();
+    }
+    final colorScheme = context.colorScheme;
+    final glass = LiquidGlassScope.of(context);
+    final labelStyle = AppTextStyle.custom(
+      context,
+      size: _labelSize,
+      leading: _labelLeading,
+      weight: FontWeight.w500,
+    );
+    return Padding(
+      padding: EdgeInsetsDirectional.only(
+        start: _railMargin,
+        end: VerticalNavigationDock._endMarginOf(context),
+        top: _railMargin,
+        bottom: _railMargin,
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final room = constraints.maxHeight.isFinite
+              ? (constraints.maxHeight - _barPadding * 2) / count
+              : _railItemHeight;
+          // A short screen squeezes the destinations rather than scrolling.
+          final itemHeight = math.max(36.0, math.min(_railItemHeight, room));
+          _itemHeight = itemHeight;
+          final showLabel = itemHeight >= 46;
+          Rect lensRect() => Rect.fromLTWH(
+            0,
+            _lens.value * itemHeight,
+            _railItemWidth,
+            itemHeight,
+          ).inflate(_lensGrowth * _lift.value);
+          Widget item(int index) {
+            final destination = widget.destinations[index];
+            final selected = index == _selected;
+            final color = selected
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant;
+            return Semantics(
+              container: true,
+              button: true,
+              selected: selected,
+              label: destination.label,
+              excludeSemantics: true,
+              onTap: () => widget.onSelected(index),
+              child: SizedBox(
+                width: _railItemWidth,
+                height: itemHeight,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    GlyphIcon(
+                      destination.glyph,
+                      size: _railIconSize,
+                      color: color,
+                      fill: 1,
+                    ),
+                    if (showLabel) ...[
+                      const SizedBox(height: _labelGap),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          destination.label,
+                          maxLines: 1,
+                          softWrap: false,
+                          style: labelStyle.copyWith(color: color),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          }
+
+          final bar = _DockSurface(
+            glass: glass,
+            style: LiquidGlassStyle.pill(colorScheme),
+            glow: _glow,
+            child: Material(
+              color: glass
+                  ? Colors.transparent
+                  : SurfaceLevel.floatingOf(colorScheme).colorOf(colorScheme),
+              shape: AppShape.full,
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: _handlePointerDown,
+                onPointerMove: _handlePointerMove,
+                onPointerUp: _handlePointerEnd,
+                onPointerCancel: _handlePointerEnd,
+                child: Padding(
+                  padding: const EdgeInsets.all(_barPadding),
+                  child: RepaintBoundary(
+                    child: SizedBox(
+                      width: _railItemWidth,
+                      height: itemHeight * count,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          AnimatedBuilder(
+                            animation: _motion,
+                            builder: (_, _) => _Lens(
+                              rect: lensRect(),
+                              lift: _lift.value,
+                              glass: glass,
+                            ),
+                          ),
+                          if (glass)
+                            AnimatedBuilder(
+                              animation: _motion,
+                              builder: (_, _) => _GlassLens(
+                                rect: lensRect(),
+                                lift: _lift.value,
+                              ),
+                            ),
+                          Column(
+                            children: [
+                              for (var index = 0; index < count; index++)
+                                item(index),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          return Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: SizedBox(
+              width: _railItemWidth + _barPadding * 2,
+              height: itemHeight * count + _barPadding * 2,
+              child: bar,
+            ),
+          );
+        },
+      ),
+    );
   }
 }
