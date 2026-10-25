@@ -66,6 +66,10 @@ class _HomeShell extends ConsumerWidget {
     final floating = ref.watch(
       appSettingProvider.select((state) => state.floatingNavigationBar),
     );
+    // A phone held sideways moves the navigation to a vertical glass dock at
+    // the end edge, and the bottom bars give way to it.
+    final landscape =
+        isMobile && MediaQuery.orientationOf(context) == Orientation.landscape;
     return Material(
       color: SurfaceLevel.page.colorOf(context.colorScheme),
       child: Column(
@@ -74,22 +78,50 @@ class _HomeShell extends ConsumerWidget {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: FocusTraversalGroup(
-                    policy: PageTraversalPolicy(),
-                    child: BottomInsetScope(
-                      inset: isMobile && floating
-                          ? NavigationDock.insetOf(context)
+                  // Always present, so turning the phone keeps the pages' state.
+                  child: Padding(
+                    padding: EdgeInsetsDirectional.only(
+                      end: landscape
+                          ? VerticalNavigationDock.insetOf(context)
                           : 0,
-                      child: _BodyPadding(isMobile: isMobile, child: child),
+                    ),
+                    child: FocusTraversalGroup(
+                      policy: PageTraversalPolicy(),
+                      child: BottomInsetScope(
+                        inset: isMobile && floating && !landscape
+                            ? NavigationDock.insetOf(context)
+                            : 0,
+                        child: _BodyPadding(isMobile: isMobile, child: child),
+                      ),
                     ),
                   ),
                 ),
+                if (landscape)
+                  PositionedDirectional(
+                    end: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: VerticalNavigationDock.insetOf(context),
+                    child: VerticalNavigationDock(
+                      destinations: [
+                        for (final item in navigationItems)
+                          NavigationDockDestination(
+                            glyph: item.glyph,
+                            label: item.label.label,
+                          ),
+                      ],
+                      selectedIndex: state.currentIndex,
+                      onSelected: (index) {
+                        _handleToPage(navigationItems[index].label, ref);
+                      },
+                    ),
+                  ),
                 PositionedDirectional(
                   start: 0,
                   end: 0,
                   bottom: 0,
                   child: AnimatedVisibility.bottomNavigation(
-                    visible: isMobile && floating,
+                    visible: isMobile && floating && !landscape,
                     child: _NavigationPadding(
                       child: NavigationDock(
                         destinations: [
@@ -111,7 +143,7 @@ class _HomeShell extends ConsumerWidget {
             ),
           ),
           AnimatedVisibility.bottomNavigation(
-            visible: isMobile && !floating,
+            visible: isMobile && !floating && !landscape,
             child: _NavigationPadding(
               child: NavigationBar(
                 destinations: [
