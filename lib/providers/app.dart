@@ -262,7 +262,8 @@ double viewWidth(Ref ref) {
 
 @Riverpod(keepAlive: true)
 ViewMode viewMode(Ref ref) {
-  return getViewMode(ref.watch(viewWidthProvider));
+  final size = ref.watch(viewSizeProvider);
+  return getViewMode(size.width, size.height);
 }
 
 @Riverpod(keepAlive: true)
